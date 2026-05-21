@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Sistema OS - IT2B</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+    <h1>Sistema de Ordem de Serviço</h1>
+    <img src="IT2B IMG.png" alt="IT2B">
+</header>
+
+<div class="container">
+    <div class="card">
+        <h2>Nova Ordem de Serviço</h2>
+
+        <form action="/os" method="POST">
+
+            <label>Número do Chamado (opcional)</label>
+            <input type="text" name="numero_chamado">
+
+            <label>Nome do Responsável</label>
+            <input type="text" name="nome" required>
+
+            <label>Cartório</label>
+            <input type="text" name="cartorio" required>
+
+            <label>Equipamento</label>
+            <input type="text" name="equipamento" required>
+
+            <label>Número do Patrimônio</label>
+            <input type="text" name="patrimonio" required>
+
+            <label>Descrição do Problema</label>
+            <textarea name="descricao" required></textarea>
+
+            <label>Data da Retirada</label>
+            <input type="date" name="data_retirada" required>
+
+            <label>Técnico Responsável</label>
+            <input type="text" name="tecnico" required>
+
+            <button type="submit">Criar OS</button>
+
+        </form>
+    </div>
+
+    <a href="/lista" class="btn-link">Ver todas as OS</a>
+</div>
+
+</body>
+</html>
