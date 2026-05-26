@@ -352,10 +352,10 @@ app.get('/gerar-pdf/:id', async (req, res) => {
     // DATA
     page.drawText('Caraguatatuba,', { x: 280, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
     const campoDia = form.createTextField('dia');
-    campoDia.addToPage(page, { x: 362, y: currentY - 28, width: 25, height: 14, borderWidth: 0.5 });
+    campoDia.addToPage(page, { x: 358, y: currentY - 24, width: 25, height: 14, borderWidth: 0.5 });
     page.drawText('de', { x: 392, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
     const campoMes = form.createTextField('mes');
-    campoMes.addToPage(page, { x: 405, y: currentY - 28, width: 80, height: 14, borderWidth: 0.5 });
+    campoMes.addToPage(page, { x: 420, y: currentY - 24, width: 25, height: 14, borderWidth: 0.5 });
     page.drawText('de 2026.', { x: 490, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
 
     // ASSINATURA COORDENADOR
