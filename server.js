@@ -23,6 +23,10 @@ db.exec(`
         descricao TEXT NOT NULL,
         data_retirada TEXT NOT NULL,
         tecnico TEXT NOT NULL,
+        paragrafo_reparo INTEGER DEFAULT 0,
+        paragrafo_substituicao INTEGER DEFAULT 0,
+        patrimonio_novo TEXT,
+        status TEXT DEFAULT 'aberta',
         data_devolucao TEXT,
         pdf_assinado TEXT
     )
@@ -56,52 +60,72 @@ app.get('/', (req, res) => {
 
 app.post('/os', (req, res) => {
     const {
-        numero_chamado,
-        nome,
-        cartorio,
-        equipamento,
-        patrimonio,
-        descricao,
-        data_retirada,
-        tecnico
+        numero_chamado, nome, cartorio, equipamento,
+        patrimonio, descricao, data_retirada, tecnico,
+        paragrafo_reparo, paragrafo_substituicao, patrimonio_novo
     } = req.body;
 
     const result = db.prepare(`
         INSERT INTO ordens (
-            numero_chamado,
-            nome,
-            cartorio,
-            equipamento,
-            patrimonio,
-            descricao,
-            data_retirada,
-            tecnico
+            numero_chamado, nome, cartorio, equipamento,
+            patrimonio, descricao, data_retirada, tecnico,
+            paragrafo_reparo, paragrafo_substituicao, patrimonio_novo, status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aberta')
     `).run(
-        numero_chamado,
-        nome,
-        cartorio,
-        equipamento,
-        patrimonio,
-        descricao,
-        data_retirada,
-        tecnico
+        numero_chamado, nome, cartorio, equipamento,
+        patrimonio, descricao, data_retirada, tecnico,
+        paragrafo_reparo ? 1 : 0,
+        paragrafo_substituicao ? 1 : 0,
+        patrimonio_novo || null
     );
 
     res.redirect(`/os/${result.lastInsertRowid}`);
 });
 
 // =========================
+// ATUALIZAR STATUS
+// =========================
+
+app.post('/status/:id', (req, res) => {
+    const { status } = req.body;
+    db.prepare('UPDATE ordens SET status = ? WHERE id = ?')
+      .run(status, req.params.id);
+    res.redirect(`/os/${req.params.id}`);
+});
+
+// =========================
+// BADGE DE STATUS
+// =========================
+
+function badgeStatus(status) {
+    const badges = {
+        'aberta':           { cor: '#fff3cd', texto: '#856404', label: '🟡 Aberta' },
+        'assinada':         { cor: '#cfe2ff', texto: '#084298', label: '🔵 Assinada por você' },
+        'aguardando_chefe': { cor: '#ffe5d0', texto: '#7c3c00', label: '🟠 Aguardando chefe' },
+        'concluida':        { cor: '#d1e7dd', texto: '#0f5132', label: '✅ Concluída' }
+    };
+    const b = badges[status] || badges['aberta'];
+    return `<span class="badge" style="background:${b.cor};color:${b.texto}">${b.label}</span>`;
+}
+
+// =========================
 // VISUALIZAR OS
 // =========================
 
 app.get('/os/:id', (req, res) => {
-    const os = db
-        .prepare('SELECT * FROM ordens WHERE id = ?')
-        .get(req.params.id);
-
+    const os = db.prepare('SELECT * FROM ordens WHERE id = ?').get(req.params.id);
     if (!os) return res.send('OS não encontrada');
+
+    const formatarData = (d) => d ? d.split('-').reverse().join('/') : '—';
+
+    const proximoStatus = {
+        'aberta':           { valor: 'assinada',         label: '🔵 Marcar como Assinada por mim' },
+        'assinada':         { valor: 'aguardando_chefe', label: '🟠 Marcar como Enviada ao Chefe' },
+        'aguardando_chefe': { valor: 'concluida',        label: '✅ Marcar como Concluída' },
+        'concluida':        null
+    };
+    const prox = proximoStatus[os.status];
 
     res.send(`
         <!DOCTYPE html>
@@ -117,7 +141,6 @@ app.get('/os/:id', (req, res) => {
                 <img src="/IT2B IMG.png" alt="IT2B">
             </header>
             <div class="container">
-
                 <div class="card">
                     <h2>Dados da OS</h2>
                     <div class="info-grid">
@@ -147,7 +170,7 @@ app.get('/os/:id', (req, res) => {
                         </div>
                         <div class="info-item">
                             <label>Data da Retirada</label>
-                            <p>${os.data_retirada ? os.data_retirada.split('-').reverse().join('/') : '—'}</p>
+                            <p>${formatarData(os.data_retirada)}</p>
                         </div>
                         <div class="info-item">
                             <label>Técnico Responsável</label>
@@ -157,6 +180,21 @@ app.get('/os/:id', (req, res) => {
                     <div class="info-item">
                         <label>Descrição</label>
                         <p>${os.descricao}</p>
+                    </div>
+                    <br>
+                    ${os.paragrafo_reparo ? `
+                    <div class="info-item">
+                        <label>✅ Inclui devolução por reparo</label>
+                    </div>` : ''}
+                    ${os.paragrafo_substituicao ? `
+                    <div class="info-item">
+                        <label>✅ Inclui substituição de equipamento</label>
+                        <p>Patrimônio novo: ${os.patrimonio_novo || '—'}</p>
+                    </div>` : ''}
+                    <br>
+                    <div class="info-item">
+                        <label>Status</label>
+                        <p>${badgeStatus(os.status)}</p>
                     </div>
                     <br>
                     <div class="info-item">
@@ -173,11 +211,20 @@ app.get('/os/:id', (req, res) => {
                     </div>
                 </div>
 
+                ${prox ? `
+                <div class="card">
+                    <h2>Avançar Status</h2>
+                    <form action="/status/${os.id}" method="POST">
+                        <input type="hidden" name="status" value="${prox.valor}">
+                        <button type="submit">${prox.label}</button>
+                    </form>
+                </div>` : ''}
+
                 <div class="card">
                     <h2>Upload do PDF Assinado</h2>
                     <form action="/upload/${os.id}" method="POST" enctype="multipart/form-data">
                         <label>Data da Devolução</label>
-                        <input type="date" name="data_devolucao" required>
+                        <input type="date" name="data_devolucao">
                         <label>PDF Assinado</label>
                         <input type="file" name="pdf" accept=".pdf" required>
                         <button type="submit">Salvar PDF Assinado</button>
@@ -187,7 +234,6 @@ app.get('/os/:id', (req, res) => {
                 <a href="/gerar-pdf/${os.id}" class="btn-pdf">📄 Gerar PDF</a>
                 &nbsp;
                 <a href="/lista" class="btn-link">Ver todas as OS</a>
-
             </div>
         </body>
         </html>
@@ -198,12 +244,11 @@ app.get('/os/:id', (req, res) => {
 // GERAR PDF DA OS
 // =========================
 
-app.get('/gerar-pdf/:id', (req, res) => {
-    const os = db
-        .prepare('SELECT * FROM ordens WHERE id = ?')
-        .get(req.params.id);
-
+app.get('/gerar-pdf/:id', async (req, res) => {
+    const os = db.prepare('SELECT * FROM ordens WHERE id = ?').get(req.params.id);
     if (!os) return res.send('OS não encontrada');
+
+    const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 
     const formatarData = (data) => {
         if (!data) return '';
@@ -211,95 +256,125 @@ app.get('/gerar-pdf/:id', (req, res) => {
         return `${dia}/${mes}/${ano}`;
     };
 
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595, 842]);
+    const { height } = page.getSize();
+    const form = pdfDoc.getForm();
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="os-${os.id}.pdf"`);
-
-    doc.pipe(res);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontNormal = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+    const fontTimesBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+    const fontTimes = await pdfDoc.embedFont(StandardFonts.TimesRoman);
 
     // LOGO
     const logoPath = path.join(__dirname, 'public', 'IT2B IMG.png');
     if (fs.existsSync(logoPath)) {
-        doc.image(logoPath, 430, 30, { width: 110 });
+        const logoBytes = fs.readFileSync(logoPath);
+        const logoImage = await pdfDoc.embedPng(logoBytes);
+        page.drawImage(logoImage, { x: 420, y: height - 90, width: 120, height: 65 });
     }
 
     // TÍTULO
-    doc.fontSize(20).fillColor('#000000').font('Helvetica-Bold')
-       .text('ORDEM DE SERVIÇO', 50, 40);
+    page.drawText('OS DE EQUIPAMENTOS', {
+        x: 130, y: height - 55, font: fontBold, size: 16, color: rgb(0, 0, 0)
+    });
 
     // SUBTÍTULO
-    doc.fontSize(14).font('Helvetica-BoldOblique')
-       .text('Tribunal de Justiça do Estado de São Paulo', 50);
+    page.drawText('Tribunal de Justiça do Estado de São Paulo', {
+        x: 110, y: height - 73, font: fontBold, size: 12, color: rgb(0, 0, 0)
+    });
 
     // COMARCA
-    doc.fontSize(16).font('Helvetica-Oblique')
-       .text('Comarca de Caraguatatuba', 50);
+    page.drawText('Comarca de Caraguatatuba', {
+        x: 185, y: height - 89, font: fontOblique, size: 11, color: rgb(0, 0, 0)
+    });
 
-    doc.moveDown(1);
-
-    // NÚMERO DA OS E CHAMADO
-    doc.fontSize(11).font('Helvetica')
-       .text(
-            `OS Nº: ${os.id}${os.numero_chamado ? `          Chamado: ${os.numero_chamado}` : ''}`,
-            50
-        );
-
-    doc.moveDown(1.5);
+    // OS Nº e CHAMADO
+    page.drawText(`OS Nº: ${os.id}${os.numero_chamado ? `          Chamado: ${os.numero_chamado}` : ''}`, {
+        x: 50, y: height - 120, font: fontNormal, size: 10, color: rgb(0, 0, 0)
+    });
 
     // 1º PARÁGRAFO
-    doc.fontSize(12).font('Times-Roman')
-       .text('Declaro estar ciente de que o equipamento ', { continued: true, align: 'justify' })
-       .font('Times-Bold').text(`${os.equipamento.toUpperCase()}`, { continued: true })
-       .font('Times-Roman').text(', de patrimônio nº ', { continued: true })
-       .font('Times-Bold').text(`${os.patrimonio.toUpperCase()}`, { continued: true })
-       .font('Times-Roman').text(', pertence a ', { continued: true })
-       .font('Times-Bold').text(`${os.cartorio.toUpperCase()}`, { continued: true })
-       .font('Times-Roman').text(', será encaminhado para a sala de informática na data ', { continued: true })
-       .font('Times-Bold').text(`${formatarData(os.data_retirada)} `, { continued: true })
-       .font('Times-Roman').text('para fins de manutenção.', { align: 'justify' });
+    const paragrafo1 = `Declaro estar ciente de que o equipamento ${os.equipamento.toUpperCase()}, de patrimônio nº ${os.patrimonio}, pertence a ${os.cartorio.toUpperCase()}, na data ${formatarData(os.data_retirada)} para fins de manutenção.`;
 
-    doc.moveDown(2);
+    const words = paragrafo1.split(' ');
+    let line = '';
+    let y = height - 160;
+    const maxWidth = 495;
 
-    // 2º PARÁGRAFO
-    doc.fontSize(12).font('Helvetica')
-       .text(
-        'Declaro ainda estar ciente de que o referido equipamento ficará sob responsabilidade do setor de informática durante o período necessário para execução dos serviços. Após devolução, será assinado pelo próprio.',
-        { align: 'justify' }
-    );
+    for (const word of words) {
+        const testLine = line + word + ' ';
+        const testWidth = fontTimes.widthOfTextAtSize(testLine, 11);
+        if (testWidth > maxWidth && line !== '') {
+            page.drawText(line.trim(), { x: 50, y, font: fontTimes, size: 11, color: rgb(0, 0, 0) });
+            y -= 16;
+            line = word + ' ';
+        } else {
+            line = testLine;
+        }
+    }
+    page.drawText(line.trim(), { x: 50, y, font: fontTimes, size: 11, color: rgb(0, 0, 0) });
 
-    doc.moveDown(3);
+    // ASSINATURA TÉCNICO
+    page.drawLine({ start: { x: 310, y: height - 250 }, end: { x: 545, y: height - 250 }, thickness: 0.5, color: rgb(0,0,0) });
+    page.drawText(`Técnico: ${os.tecnico}`, { x: 310, y: height - 263, font: fontTimesBold, size: 9, color: rgb(0,0,0) });
+    page.drawText('Assinatura do Técnico Responsável - IT2B', { x: 310, y: height - 275, font: fontTimes, size: 8, color: rgb(0,0,0) });
 
-    // DEVOLUÇÃO
-    doc.fontSize(11).font('Helvetica-Oblique')
-       .text('Equipamento devolvido em ____/____/________', { align: 'right' });
+    let currentY = height - 380;
 
-    doc.moveDown(5);
+    // 2º PARÁGRAFO — Reparo
+    if (os.paragrafo_reparo) {
+        const checkbox1 = form.createCheckBox('reparo');
+        checkbox1.addToPage(page, { x: 50, y: currentY - 4, width: 12, height: 12 });
+        page.drawText('Declaro que recebi o equipamento acima identificado devidamente funcionando.', {
+            x: 70, y: currentY, font: fontNormal, size: 11, color: rgb(0,0,0)
+        });
+        currentY -= 35;
+    }
 
-    // ASSINATURAS
-    const assinaturaY = doc.y;
+    // 3º PARÁGRAFO — Substituição
+    if (os.paragrafo_substituicao) {
+        const checkbox2 = form.createCheckBox('substituicao');
+        checkbox2.addToPage(page, { x: 50, y: currentY - 4, width: 12, height: 12 });
+        page.drawText('Declaro que recebi equipamento novo com patrimônio nº', {
+            x: 70, y: currentY, font: fontNormal, size: 11, color: rgb(0,0,0)
+        });
+        const campoPat = form.createTextField('patrimonio_novo');
+        campoPat.setText(os.patrimonio_novo || '');
+        campoPat.addToPage(page, { x: 70, y: currentY - 20, width: 150, height: 16, borderWidth: 0.5 });
+        page.drawText('em substituição ao equipamento acima identificado.', {
+            x: 70, y: currentY - 38, font: fontNormal, size: 11, color: rgb(0,0,0)
+        });
+        currentY -= 90;
+    }
 
-    // ASSINATURA DO RESPONSÁVEL
-    doc.moveTo(50, assinaturaY).lineTo(250, assinaturaY).stroke();
-    doc.fontSize(10).font('Times-Bold')
-       .text(`${os.nome.toUpperCase()}`, 50, assinaturaY + 5);
-    doc.fontSize(9).font('Times-Roman')
-       .text('Assinatura do Coordenador do Cartório', 50, assinaturaY + 18);
+    // DATA
+    page.drawText('Caraguatatuba,', { x: 280, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
+    const campoDia = form.createTextField('dia');
+    campoDia.addToPage(page, { x: 362, y: currentY - 28, width: 25, height: 14, borderWidth: 0.5 });
+    page.drawText('de', { x: 392, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
+    const campoMes = form.createTextField('mes');
+    campoMes.addToPage(page, { x: 405, y: currentY - 28, width: 80, height: 14, borderWidth: 0.5 });
+    page.drawText('de 2026.', { x: 490, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
 
-    // ASSINATURA DO TÉCNICO
-    doc.moveTo(310, assinaturaY).lineTo(550, assinaturaY).stroke();
-    doc.fontSize(10).font('Times-Bold')
-       .text(`Técnico Responsável: ${os.tecnico}`, 310, assinaturaY + 5);
-    doc.fontSize(9).font('Times-Roman')
-       .text('Assinatura do Técnico Responsável', 310, assinaturaY + 18);
+    // ASSINATURA COORDENADOR
+    page.drawLine({ start: { x: 50, y: currentY - 70 }, end: { x: 250, y: currentY - 70 }, thickness: 0.5, color: rgb(0,0,0) });
+    page.drawText(os.nome.toUpperCase(), { x: 50, y: currentY - 83, font: fontTimesBold, size: 9, color: rgb(0,0,0) });
+    page.drawText('Assinatura do Coordenador do Cartório', { x: 50, y: currentY - 95, font: fontTimes, size: 8, color: rgb(0,0,0) });
 
     // RODAPÉ
     const rodapePath = path.join(__dirname, 'public', 'it2b rodapé img.jpg');
     if (fs.existsSync(rodapePath)) {
-        doc.image(rodapePath, 0, 750, { width: 595 });
+        const rodapeBytes = fs.readFileSync(rodapePath);
+        const rodapeImage = await pdfDoc.embedJpg(rodapeBytes);
+        page.drawImage(rodapeImage, { x: 0, y: 0, width: 595, height: 80 });
     }
 
-    doc.end();
+    const pdfBytes = await pdfDoc.save();
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="os-${os.id}.pdf"`);
+    res.end(Buffer.from(pdfBytes));
 });
 
 // =========================
@@ -316,10 +391,9 @@ app.post('/upload/:id', upload.single('pdf'), (req, res) => {
     const data_devolucao = req.body.data_devolucao;
 
     db.prepare(`
-        UPDATE ordens
-        SET pdf_assinado = ?, data_devolucao = ?
+        UPDATE ordens SET pdf_assinado = ?, data_devolucao = ?, status = 'concluida'
         WHERE id = ?
-    `).run(filename, data_devolucao, req.params.id);
+    `).run(filename, data_devolucao || null, req.params.id);
 
     res.redirect(`/os/${req.params.id}`);
 });
@@ -330,6 +404,7 @@ app.post('/upload/:id', upload.single('pdf'), (req, res) => {
 
 app.get('/lista', (req, res) => {
     const ordens = db.prepare('SELECT * FROM ordens').all();
+    const formatarData = (d) => d ? d.split('-').reverse().join('/') : '—';
 
     let cards = '';
 
@@ -363,20 +438,16 @@ app.get('/lista', (req, res) => {
                     </div>
                     <div class="info-item">
                         <label>Data da Retirada</label>
-                        <p>${os.data_retirada}</p>
+                        <p>${formatarData(os.data_retirada)}</p>
                     </div>
                     <div class="info-item">
-                        <label>Técnico Responsável</label>
+                        <label>Técnico</label>
                         <p>${os.tecnico}</p>
                     </div>
                 </div>
-                <div>
-                    <label>PDF Assinado</label>
-                    <p>
-                        <span class="badge ${os.pdf_assinado ? 'badge-assinado' : 'badge-pendente'}">
-                            ${os.pdf_assinado ? '✅ Assinado' : '⏳ Pendente'}
-                        </span>
-                    </p>
+                <div class="info-item">
+                    <label>Status</label>
+                    <p>${badgeStatus(os.status)}</p>
                 </div>
                 <br>
                 <a href="/os/${os.id}" class="btn-link">Abrir OS</a>
@@ -398,7 +469,7 @@ app.get('/lista', (req, res) => {
                 <img src="/IT2B IMG.png" alt="IT2B">
             </header>
             <div class="container">
-                ${cards}
+                ${cards.length ? cards : '<div class="card"><p>Nenhuma OS cadastrada.</p></div>'}
                 <a href="/" class="btn-link">Nova OS</a>
             </div>
         </body>

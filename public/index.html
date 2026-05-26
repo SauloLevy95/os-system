@@ -42,6 +42,32 @@
             <label>Técnico Responsável</label>
             <input type="text" name="tecnico" required>
 
+            <br><br>
+            <hr>
+            <br>
+
+            <label style="font-size:14px;text-transform:none;">Parágrafos adicionais no PDF:</label>
+
+            <br><br>
+
+            <input type="checkbox" name="paragrafo_reparo" value="1" id="reparo">
+            <label for="reparo" style="display:inline;text-transform:none;font-weight:normal;font-size:14px;">
+                Incluir devolução por reparo
+            </label>
+
+            <br><br>
+
+            <input type="checkbox" name="paragrafo_substituicao" value="1" id="substituicao"
+                onclick="document.getElementById('campo_patrimonio_novo').style.display = this.checked ? 'block' : 'none'">
+            <label for="substituicao" style="display:inline;text-transform:none;font-weight:normal;font-size:14px;">
+                Incluir substituição de equipamento
+            </label>
+
+            <div id="campo_patrimonio_novo" style="display:none;margin-top:10px;">
+                <label>Patrimônio do novo equipamento</label>
+                <input type="text" name="patrimonio_novo">
+            </div>
+
             <button type="submit">Criar OS</button>
 
         </form>
