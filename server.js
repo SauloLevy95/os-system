@@ -32,6 +32,19 @@ db.exec(`
     )
 `);
 
+db.exec(`
+    CREATE TABLE IF NOT EXISTS inventario (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        equipamento TEXT NOT NULL,
+        patrimonio TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'funcionando',
+        numero_chamado TEXT,
+        cartorio TEXT NOT NULL,
+        data_atualizacao TEXT NOT NULL,
+        modificado_por TEXT NOT NULL
+    )
+`);
+
 // =========================
 // CONFIGURAÇÃO UPLOAD PDF
 // =========================
@@ -478,8 +491,247 @@ app.get('/lista', (req, res) => {
 });
 
 // =========================
-// INICIAR SERVIDOR
+// INVENTÁRIO — LISTAR
 // =========================
+
+app.get('/inventario', (req, res) => {
+    const itens = db.prepare('SELECT * FROM inventario ORDER BY id DESC').all();
+
+    const statusBadge = (status) => {
+        const map = {
+            'funcionando':        { cor: '#d1e7dd', texto: '#0f5132', label: '🟢 Funcionando' },
+            'aguardando_chamado': { cor: '#fff3cd', texto: '#856404', label: '🟡 Aguardando Chamado' },
+            'em_manutencao':      { cor: '#f8d7da', texto: '#842029', label: '🔴 Em Manutenção' },
+            'emprestado':         { cor: '#cfe2ff', texto: '#084298', label: '🔵 Emprestado' },
+            'enviado_conserto':   { cor: '#ffe5d0', texto: '#7c3c00', label: '🟠 Enviado p/ Conserto' },
+            'descartado':         { cor: '#e2e3e5', texto: '#41464b', label: '⚫ Descartado' }
+        };
+        const b = map[status] || map['funcionando'];
+        return `<span class="badge" style="background:${b.cor};color:${b.texto}">${b.label}</span>`;
+    };
+
+    let cards = '';
+    itens.forEach(item => {
+        cards += `
+            <div class="card">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <label>Equipamento</label>
+                        <p>${item.equipamento}</p>
+                    </div>
+                    <div class="info-item">
+                        <label>Patrimônio</label>
+                        <p>${item.patrimonio}</p>
+                    </div>
+                    <div class="info-item">
+                        <label>Cartório de Origem</label>
+                        <p>${item.cartorio}</p>
+                    </div>
+                    <div class="info-item">
+                        <label>N° Chamado</label>
+                        <p>${item.numero_chamado || '—'}</p>
+                    </div>
+                    <div class="info-item">
+                        <label>Última Atualização</label>
+                        <p>${item.data_atualizacao}</p>
+                    </div>
+                    <div class="info-item">
+                        <label>Modificado por</label>
+                        <p>${item.modificado_por}</p>
+                    </div>
+                </div>
+                <div class="info-item">
+                    <label>Status</label>
+                    <p>${statusBadge(item.status)}</p>
+                </div>
+                <br>
+                <a href="/inventario/editar/${item.id}" class="btn-link">Editar</a>
+            </div>
+        `;
+    });
+
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="UTF-8">
+            <title>Inventário - IT2B</title>
+            <link rel="stylesheet" href="/style.css">
+        </head>
+        <body>
+            <header>
+                <h1>Inventário de Equipamentos</h1>
+                <img src="/IT2B IMG.png" alt="IT2B">
+            </header>
+            <div class="container">
+                <a href="/inventario/novo" class="btn-pdf">+ Novo Equipamento</a>
+                &nbsp;
+                <a href="/" class="btn-link">Ordens de Serviço</a>
+                <br><br>
+                ${itens.length ? cards : '<div class="card"><p>Nenhum equipamento cadastrado.</p></div>'}
+            </div>
+        </body>
+        </html>
+    `);
+});
+
+// =========================
+// INVENTÁRIO — NOVO
+// =========================
+
+app.get('/inventario/novo', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="UTF-8">
+            <title>Novo Equipamento - IT2B</title>
+            <link rel="stylesheet" href="/style.css">
+        </head>
+        <body>
+            <header>
+                <h1>Novo Equipamento</h1>
+                <img src="/IT2B IMG.png" alt="IT2B">
+            </header>
+            <div class="container">
+                <div class="card">
+                    <h2>Cadastrar Equipamento</h2>
+                    <form action="/inventario/novo" method="POST">
+
+                        <label>Equipamento</label>
+                        <input type="text" name="equipamento" required>
+
+                        <label>Patrimônio</label>
+                        <input type="text" name="patrimonio" required>
+
+                        <label>Cartório de Origem</label>
+                        <input type="text" name="cartorio" required>
+
+                        <label>N° Chamado (opcional)</label>
+                        <input type="text" name="numero_chamado">
+
+                        <label>Status</label>
+                        <select name="status" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                            <option value="funcionando">🟢 Funcionando</option>
+                            <option value="aguardando_chamado">🟡 Aguardando Chamado</option>
+                            <option value="em_manutencao">🔴 Em Manutenção</option>
+                            <option value="emprestado">🔵 Emprestado</option>
+                            <option value="enviado_conserto">🟠 Enviado p/ Conserto</option>
+                            <option value="descartado">⚫ Descartado</option>
+                        </select>
+
+                        <label>Modificado por</label>
+                        <select name="modificado_por" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                            <option value="Saulo Levy">Saulo Levy</option>
+                            <option value="Anderson Marques">Anderson Marques</option>
+                            <option value="Emerson Kocis">Emerson Kocis</option>
+                        </select>
+
+                        <button type="submit">Salvar Equipamento</button>
+                    </form>
+                </div>
+                <a href="/inventario" class="btn-link">Voltar</a>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
+app.post('/inventario/novo', (req, res) => {
+    const { equipamento, patrimonio, cartorio, numero_chamado, status, modificado_por } = req.body;
+    const data = new Date().toLocaleDateString('pt-BR');
+
+    db.prepare(`
+        INSERT INTO inventario (equipamento, patrimonio, cartorio, numero_chamado, status, data_atualizacao, modificado_por)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(equipamento, patrimonio, cartorio, numero_chamado || null, status, data, modificado_por);
+
+    res.redirect('/inventario');
+});
+
+// =========================
+// INVENTÁRIO — EDITAR
+// =========================
+
+app.get('/inventario/editar/:id', (req, res) => {
+    const item = db.prepare('SELECT * FROM inventario WHERE id = ?').get(req.params.id);
+    if (!item) return res.send('Equipamento não encontrado');
+
+    const options = (val) => [
+        { value: 'funcionando', label: '🟢 Funcionando' },
+        { value: 'aguardando_chamado', label: '🟡 Aguardando Chamado' },
+        { value: 'em_manutencao', label: '🔴 Em Manutenção' },
+        { value: 'emprestado', label: '🔵 Emprestado' },
+        { value: 'enviado_conserto', label: '🟠 Enviado p/ Conserto' },
+        { value: 'descartado', label: '⚫ Descartado' }
+    ].map(o => `<option value="${o.value}" ${o.value === val ? 'selected' : ''}>${o.label}</option>`).join('');
+
+    const tecnicos = (val) => ['Saulo Levy', 'Anderson Marques', 'Emerson Kocis']
+        .map(t => `<option value="${t}" ${t === val ? 'selected' : ''}>${t}</option>`).join('');
+
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="UTF-8">
+            <title>Editar Equipamento - IT2B</title>
+            <link rel="stylesheet" href="/style.css">
+        </head>
+        <body>
+            <header>
+                <h1>Editar Equipamento</h1>
+                <img src="/IT2B IMG.png" alt="IT2B">
+            </header>
+            <div class="container">
+                <div class="card">
+                    <h2>Atualizar Equipamento</h2>
+                    <form action="/inventario/editar/${item.id}" method="POST">
+
+                        <label>Equipamento</label>
+                        <input type="text" name="equipamento" value="${item.equipamento}" required>
+
+                        <label>Patrimônio</label>
+                        <input type="text" name="patrimonio" value="${item.patrimonio}" required>
+
+                        <label>Cartório de Origem</label>
+                        <input type="text" name="cartorio" value="${item.cartorio}" required>
+
+                        <label>N° Chamado (opcional)</label>
+                        <input type="text" name="numero_chamado" value="${item.numero_chamado || ''}">
+
+                        <label>Status</label>
+                        <select name="status" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                            ${options(item.status)}
+                        </select>
+
+                        <label>Modificado por</label>
+                        <select name="modificado_por" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;">
+                            ${tecnicos(item.modificado_por)}
+                        </select>
+
+                        <button type="submit">Atualizar</button>
+                    </form>
+                </div>
+                <a href="/inventario" class="btn-link">Voltar</a>
+            </div>
+        </body>
+        </html>
+    `);
+});
+
+app.post('/inventario/editar/:id', (req, res) => {
+    const { equipamento, patrimonio, cartorio, numero_chamado, status, modificado_por } = req.body;
+    const data = new Date().toLocaleDateString('pt-BR');
+
+    db.prepare(`
+        UPDATE inventario SET
+            equipamento = ?, patrimonio = ?, cartorio = ?,
+            numero_chamado = ?, status = ?, data_atualizacao = ?, modificado_por = ?
+        WHERE id = ?
+    `).run(equipamento, patrimonio, cartorio, numero_chamado || null, status, data, modificado_por, req.params.id);
+
+    res.redirect('/inventario');
+});
 
 app.listen(3000, () => {
     console.log('Servidor rodando em http://localhost:3000');
