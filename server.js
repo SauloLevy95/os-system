@@ -93,6 +93,26 @@ app.post('/os', (req, res) => {
         patrimonio_novo || null
     );
 
+    // Criar item no inventário automaticamente
+    const data = new Date().toLocaleDateString('pt-BR');
+    const existente = db.prepare('SELECT * FROM inventario WHERE patrimonio = ?').get(patrimonio);
+
+    if (existente) {
+        db.prepare(`
+            UPDATE inventario SET
+                status = 'em_manutencao',
+                numero_chamado = ?,
+                data_atualizacao = ?,
+                modificado_por = ?
+            WHERE patrimonio = ?
+        `).run(numero_chamado || null, data, tecnico, patrimonio);
+    } else {
+        db.prepare(`
+            INSERT INTO inventario (equipamento, patrimonio, cartorio, numero_chamado, status, data_atualizacao, modificado_por)
+            VALUES (?, ?, ?, ?, 'em_manutencao', ?, ?)
+        `).run(equipamento, patrimonio, cartorio, numero_chamado || null, data, tecnico);
+    }
+
     res.redirect(`/os/${result.lastInsertRowid}`);
 });
 
