@@ -1300,8 +1300,8 @@ app.post('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, (req, re
 // =====================================================
 // SERVIDOR
 // =====================================================
-app.listen(3000, () => {
-    console.log('');
-    console.log('  🚀 IT2B rodando em http://localhost:3000');
-    console.log('');
+// Coloca isso:
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 IT2B rodando na porta ${PORT}`);
 });
