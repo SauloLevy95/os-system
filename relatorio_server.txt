@@ -1,0 +1,95 @@
+
+ANÁLISE DO server.js
+
+O arquivo está estruturalmente corrompido por mistura de blocos duplicados.
+
+PRINCIPAIS ERROS ENCONTRADOS:
+
+1. DUPLICAÇÃO DE VARIÁVEIS
+--------------------------------
+Você declarou:
+- const db = new Database(...)
+- const upload = multer(...)
+
+mais de uma vez.
+
+Isso gera:
+SyntaxError: Identifier has already been declared
+
+--------------------------------
+
+2. ROTAS DENTRO DE OUTRAS ROTAS
+--------------------------------
+Existe app.get('/inventario') dentro da rota de PDF.
+
+Isso quebra completamente o fluxo do Express.
+
+--------------------------------
+
+3. HTML MISTURADO COM JAVASCRIPT
+--------------------------------
+Trechos como:
+
+<div class="container">
+<h1>Inventário</h1>
+
+foram inseridos diretamente no JS.
+
+Isso causa:
+SyntaxError: Unexpected token '<'
+
+--------------------------------
+
+4. TEMPLATE STRING QUEBRADA
+--------------------------------
+Você abriu crases ` e não fechou corretamente em vários pontos.
+
+--------------------------------
+
+5. DB.EXEC CORROMPIDO
+--------------------------------
+Você colocou CREATE TABLE dentro de outro CREATE TABLE.
+
+Exemplo:
+
+db.exec(`
+CREATE TABLE ...
+    CREATE TABLE ...
+`);
+
+Isso é inválido.
+
+--------------------------------
+
+6. BLOCO PDF MISTURADO COM INVENTÁRIO
+--------------------------------
+Código do PDF está no meio das rotas de inventário.
+
+--------------------------------
+
+7. TRY/CATCH DUPLICADOS
+--------------------------------
+Existem múltiplos catch na mesma estrutura.
+
+--------------------------------
+
+COMO RESOLVER
+
+A melhor solução NÃO é tentar remendar esse arquivo.
+
+O ideal é:
+- criar um novo server.js limpo
+- reaproveitar apenas os blocos funcionais
+
+ESTRUTURA RECOMENDADA:
+
+1. IMPORTS
+2. CONFIG
+3. BANCO
+4. HELPERS
+5. MIDDLEWARES
+6. ROTAS LOGIN
+7. ROTAS INVENTÁRIO
+8. ROTAS PDF
+9. app.listen()
+

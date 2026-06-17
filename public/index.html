@@ -1,82 +1,238 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
+
     <meta charset="UTF-8">
-    <title>Sistema OS - IT2B</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>
+        Registro e Movimentações Patrimoniais
+    </title>
+
+    <!-- FONT AWESOME -->
+    <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <style>
+
+        *{
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
+            font-family:Arial, Helvetica, sans-serif;
+        }
+
+        body{
+            background:#f4f6f9;
+            min-height:100vh;
+        }
+
+        /* =========================
+           HEADER
+        ========================= */
+
+        header{
+
+            background:linear-gradient(135deg,#001f3f,#003366);
+
+            color:white;
+
+            padding:40px 20px;
+
+            text-align:center;
+
+            box-shadow:0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        header img{
+            width:170px;
+            margin-bottom:20px;
+        }
+
+        header h1{
+            font-size:42px;
+            margin-bottom:15px;
+            letter-spacing:1px;
+        }
+
+        header h2{
+            font-size:22px;
+            font-weight:normal;
+            opacity:0.95;
+        }
+
+        /* =========================
+           CONTAINER
+        ========================= */
+
+        .container{
+            max-width:1200px;
+            margin:auto;
+            padding:70px 20px;
+        }
+
+        /* =========================
+           MENU PRINCIPAL
+        ========================= */
+
+        .menu-grid{
+
+            display:grid;
+
+            grid-template-columns:
+            repeat(auto-fit,minmax(320px,1fr));
+
+            gap:50px;
+        }
+
+        .menu-card{
+
+            background:white;
+
+            border-radius:25px;
+
+            padding:60px 30px;
+
+            text-align:center;
+
+            text-decoration:none;
+
+            color:#111;
+
+            box-shadow:0 8px 30px rgba(0,0,0,0.1);
+
+            transition:0.3s;
+        }
+
+        .menu-card:hover{
+
+            transform:translateY(-10px);
+
+            box-shadow:0 15px 35px rgba(0,0,0,0.15);
+        }
+
+        .menu-card i{
+
+            font-size:90px;
+
+            color:#001f3f;
+
+            margin-bottom:30px;
+        }
+
+        .menu-card h3{
+
+            font-size:32px;
+
+            margin-bottom:15px;
+        }
+
+        .menu-card p{
+
+            font-size:17px;
+
+            color:#555;
+
+            line-height:1.5;
+        }
+
+        /* =========================
+           RESPONSIVO
+        ========================= */
+
+        @media(max-width:768px){
+
+            header h1{
+                font-size:28px;
+            }
+
+            header h2{
+                font-size:18px;
+            }
+
+            .menu-card{
+                padding:45px 20px;
+            }
+
+            .menu-card h3{
+                font-size:24px;
+            }
+
+        }
+
+    </style>
+
 </head>
+
 <body>
 
-<header>
-    <h1>Sistema de Ordem de Serviço</h1>
-    <img src="IT2B IMG.png" alt="IT2B">
-</header>
+    <!-- =========================
+         HEADER
+    ========================== -->
 
-<div class="container">
-    <div class="card">
-        <h2>Nova Ordem de Serviço</h2>
+    <header>
 
-        <form action="/os" method="POST">
+        <img src="IT2B IMG.png" alt="IT2B">
 
-            <label>Número do Chamado (opcional)</label>
-            <input type="text" name="numero_chamado">
+        <h1>
+            REGISTRO E MOVIMENTAÇÕES PATRIMONIAIS
+        </h1>
 
-            <label>Nome do Responsável</label>
-            <input type="text" name="nome" required>
+        <h2>
+            Tribunal de Justiça do Estado de São Paulo
+        </h2>
 
-            <label>Cartório</label>
-            <input type="text" name="cartorio" required>
+    </header>
 
-            <label>Equipamento</label>
-            <input type="text" name="equipamento" required>
+    <!-- =========================
+         CONTEÚDO
+    ========================== -->
 
-            <label>Número do Patrimônio</label>
-            <input type="text" name="patrimonio" required>
+    <div class="container">
 
-            <label>Descrição do Problema</label>
-            <textarea name="descricao" required></textarea>
+        <div class="menu-grid">
 
-            <label>Data da Retirada</label>
-            <input type="date" name="data_retirada" required>
+            <!-- INVENTÁRIO -->
 
-            <label>Técnico Responsável</label>
-            <input type="text" name="tecnico" required>
+            <a href="/inventario" class="menu-card">
 
-            <br><br>
-            <hr>
-            <br>
+                <i class="fa-solid fa-computer"></i>
 
-            <label style="font-size:14px;text-transform:none;">Parágrafos adicionais no PDF:</label>
+                <h3>
+                    Inventário de Equipamentos
+                </h3>
 
-            <br><br>
+                <p>
+                    Controle completo de patrimônios,
+                    equipamentos, movimentações,
+                    status e histórico do inventário.
+                </p>
 
-            <input type="checkbox" name="paragrafo_reparo" value="1" id="reparo">
-            <label for="reparo" style="display:inline;text-transform:none;font-weight:normal;font-size:14px;">
-                Incluir devolução por reparo
-            </label>
+            </a>
 
-            <br><br>
+            <!-- ORDEM DE SERVIÇO -->
 
-            <input type="checkbox" name="paragrafo_substituicao" value="1" id="substituicao"
-                onclick="document.getElementById('campo_patrimonio_novo').style.display = this.checked ? 'block' : 'none'">
-            <label for="substituicao" style="display:inline;text-transform:none;font-weight:normal;font-size:14px;">
-                Incluir substituição de equipamento
-            </label>
+            <a href="/login" class="menu-card">
 
-            <div id="campo_patrimonio_novo" style="display:none;margin-top:10px;">
-                <label>Patrimônio do novo equipamento</label>
-                <input type="text" name="patrimonio_novo">
-            </div>
+                <i class="fa-solid fa-screwdriver-wrench"></i>
 
-            <button type="submit">Criar OS</button>
+                <h3>
+                    Ordem de Serviço
+                </h3>
 
-        </form>
+                <p>
+                    Acesso ao sistema de ordens
+                    de serviço, gerenciamento
+                    técnico e emissão de PDFs.
+                </p>
+
+            </a>
+
+        </div>
+
     </div>
 
-    <a href="/lista" class="btn-link">Ver todas as OS</a>
-&nbsp;
-<a href="/inventario" class="btn-link">Inventário</a>
-</div>
-
 </body>
+
 </html>
