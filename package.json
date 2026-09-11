@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@libsql/client": "^0.17.4",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.10.0",
     "ejs": "^5.0.2",
@@ -21,6 +22,7 @@
     "mysql2": "^3.22.3",
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.18.0",
+    "pg": "^8.23.0",
     "puppeteer": "^24.43.1"
   }
 }

@@ -1,10 +1,11 @@
 // =====================================================
 // IMPORTS
 // =====================================================
+require('dotenv').config();
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const express = require('express');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 const multer = require('multer');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
@@ -15,13 +16,15 @@ const fs = require('fs');
 // =====================================================
 const app = express();
 
-if (!fs.existsSync('./database')) fs.mkdirSync('./database');
 if (!fs.existsSync('./uploads')) fs.mkdirSync('./uploads');
 
 // =====================================================
-// BANCO DE DADOS
+// BANCO DE DADOS — PostgreSQL
 // =====================================================
-const db = new Database('./database/os.db');
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 
 // =====================================================
 // MULTER
@@ -37,49 +40,51 @@ const upload = multer({
 // =====================================================
 // TABELAS
 // =====================================================
-db.exec(`
-CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    usuario TEXT UNIQUE NOT NULL,
-    senha TEXT NOT NULL,
-    tipo TEXT NOT NULL DEFAULT 'tecnico',
-    trocar_senha INTEGER DEFAULT 1
-)
-`);
+async function criarTabelas() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id SERIAL PRIMARY KEY,
+            nome TEXT NOT NULL,
+            usuario TEXT UNIQUE NOT NULL,
+            senha TEXT NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'tecnico',
+            trocar_senha INTEGER DEFAULT 1
+        )
+    `);
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS ordens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    numero_chamado TEXT,
-    nome TEXT NOT NULL,
-    cartorio TEXT NOT NULL,
-    equipamento TEXT NOT NULL,
-    patrimonio TEXT NOT NULL,
-    descricao TEXT NOT NULL,
-    data_retirada TEXT NOT NULL,
-    tecnico TEXT NOT NULL,
-    paragrafo_reparo INTEGER DEFAULT 0,
-    paragrafo_substituicao INTEGER DEFAULT 0,
-    patrimonio_novo TEXT,
-    status TEXT DEFAULT 'aberta',
-    data_devolucao TEXT,
-    pdf_assinado TEXT
-)
-`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS ordens (
+            id SERIAL PRIMARY KEY,
+            numero_chamado TEXT,
+            nome TEXT NOT NULL,
+            cartorio TEXT NOT NULL,
+            equipamento TEXT NOT NULL,
+            patrimonio TEXT NOT NULL,
+            descricao TEXT NOT NULL,
+            data_retirada TEXT NOT NULL,
+            tecnico TEXT NOT NULL,
+            paragrafo_reparo INTEGER DEFAULT 0,
+            paragrafo_substituicao INTEGER DEFAULT 0,
+            patrimonio_novo TEXT,
+            status TEXT DEFAULT 'aberta',
+            data_devolucao TEXT,
+            pdf_assinado TEXT
+        )
+    `);
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS inventario (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    equipamento TEXT NOT NULL,
-    patrimonio TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'funcionando',
-    numero_chamado TEXT,
-    cartorio TEXT NOT NULL,
-    data_atualizacao TEXT NOT NULL,
-    modificado_por TEXT NOT NULL
-)
-`);
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS inventario (
+            id SERIAL PRIMARY KEY,
+            equipamento TEXT NOT NULL,
+            patrimonio TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'funcionando',
+            numero_chamado TEXT,
+            cartorio TEXT NOT NULL,
+            data_atualizacao TEXT NOT NULL,
+            modificado_por TEXT NOT NULL
+        )
+    `);
+}
 
 // =====================================================
 // HELPERS
@@ -96,7 +101,7 @@ function escapeHtml(text) {
 
 function formatarData(d) {
     if (!d) return '—';
-    return d.split('-').reverse().join('/');
+    return String(d).substring(0, 10).split('-').reverse().join('/');
 }
 
 function badgeStatus(status) {
@@ -121,22 +126,6 @@ function badgeInventario(status) {
     };
     const b = badges[status] || badges['funcionando'];
     return `<span class="badge ${b.cls}">${b.label}</span>`;
-}
-
-function quebrarTexto(texto, maxChars) {
-    const palavras = texto.split(' ');
-    const linhas = [];
-    let linhaAtual = '';
-    for (const palavra of palavras) {
-        if ((linhaAtual + ' ' + palavra).trim().length <= maxChars) {
-            linhaAtual = (linhaAtual + ' ' + palavra).trim();
-        } else {
-            if (linhaAtual) linhas.push(linhaAtual);
-            linhaAtual = palavra;
-        }
-    }
-    if (linhaAtual) linhas.push(linhaAtual);
-    return linhas;
 }
 
 function layout({ titulo, conteudo, usuario, paginaAtiva = '' }) {
@@ -227,22 +216,21 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // =====================================================
 async function criarUsuariosPadrao() {
     const usuarios = [
-        { nome: 'Saulo Levy Lima Martins',  usuario: 'saulollm@tjsp.jus.br',          senha: '123456', tipo: 'admin' },
-        { nome: 'Anderson Marques Farias',  usuario: 'anderson.mfarias@tjsp.jus.br',   senha: '12345',  tipo: 'tecnico' }
+        { nome: 'Saulo Levy Lima Martins',  usuario: 'saulollm@tjsp.jus.br',         senha: '123456', tipo: 'admin' },
+        { nome: 'Anderson Marques Farias',  usuario: 'anderson.mfarias@tjsp.jus.br',  senha: '12345',  tipo: 'tecnico' }
     ];
     for (const u of usuarios) {
-        const existe = db.prepare('SELECT id FROM usuarios WHERE usuario = ?').get(u.usuario);
-        if (!existe) {
+        const res = await pool.query('SELECT id FROM usuarios WHERE usuario = $1', [u.usuario]);
+        if (res.rows.length === 0) {
             const hash = await bcrypt.hash(u.senha, 10);
-            db.prepare(`
-                INSERT INTO usuarios (nome, usuario, senha, tipo, trocar_senha)
-                VALUES (?, ?, ?, ?, 1)
-            `).run(u.nome, u.usuario, hash, u.tipo);
+            await pool.query(
+                'INSERT INTO usuarios (nome, usuario, senha, tipo, trocar_senha) VALUES ($1, $2, $3, $4, 1)',
+                [u.nome, u.usuario, hash, u.tipo]
+            );
             console.log(`[OK] Usuário criado: ${u.usuario}`);
         }
     }
 }
-criarUsuariosPadrao().catch(console.error);
 
 // =====================================================
 // MIDDLEWARE DE AUTH
@@ -262,9 +250,7 @@ function verificarTrocaSenha(req, res, next) {
 // =====================================================
 // ROTAS LOGIN
 // =====================================================
-app.get('/', (req, res) => {
-    res.redirect('/login');
-});
+app.get('/', (req, res) => res.redirect('/login'));
 
 app.get('/login', (req, res) => {
     res.send(`<!DOCTYPE html>
@@ -323,15 +309,17 @@ app.get('/login', (req, res) => {
 app.post('/login', async (req, res) => {
     try {
         const { usuario, senha } = req.body;
-        const usuariosPermitidos = ['saulollm@tjsp.jus.br', 'anderson.farias@tjsp.jus.br'];
-        if (!usuariosPermitidos.includes(usuario)) {
-            return res.redirect('/login?erro=sem_permissao');
-        }
-        const user = db.prepare('SELECT * FROM usuarios WHERE usuario = ?').get(usuario);
+        const usuariosPermitidos = ['saulollm@tjsp.jus.br', 'anderson.mfarias@tjsp.jus.br'];
+        if (!usuariosPermitidos.includes(usuario)) return res.redirect('/login?erro=sem_permissao');
+        const result = await pool.query('SELECT * FROM usuarios WHERE usuario = $1', [usuario]);
+        const user = result.rows[0];
         if (!user) return res.redirect('/login?erro=sem_permissao');
         const ok = await bcrypt.compare(senha, user.senha);
         if (!ok) return res.redirect('/login?erro=senha');
-        req.session.usuario = user;
+        req.session.usuario = {
+            id: user.id, nome: user.nome, usuario: user.usuario,
+            tipo: user.tipo, trocar_senha: user.trocar_senha
+        };
         if (user.trocar_senha) return res.redirect('/trocar-senha');
         res.redirect('/painel');
     } catch (err) {
@@ -376,8 +364,7 @@ app.post('/trocar-senha', verificarLogin, async (req, res) => {
         const { nova_senha, confirmar_senha } = req.body;
         if (nova_senha !== confirmar_senha) return res.redirect('/trocar-senha?erro=1');
         const hash = await bcrypt.hash(nova_senha, 10);
-        db.prepare('UPDATE usuarios SET senha = ?, trocar_senha = 0 WHERE id = ?')
-            .run(hash, req.session.usuario.id);
+        await pool.query('UPDATE usuarios SET senha = $1, trocar_senha = 0 WHERE id = $2', [hash, req.session.usuario.id]);
         req.session.usuario.trocar_senha = 0;
         res.redirect('/painel');
     } catch (err) {
@@ -420,16 +407,25 @@ app.get('/logout', (req, res) => {
 // =====================================================
 // PAINEL
 // =====================================================
-app.get('/painel', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.get('/painel', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const usuario = req.session.usuario;
         const primeiroNome = escapeHtml(usuario.nome.split(' ')[0]);
+
+        const [r1, r2, r3, r4] = await Promise.all([
+            pool.query("SELECT COUNT(*) as n FROM ordens WHERE status = 'aberta'"),
+            pool.query("SELECT COUNT(*) as n FROM ordens WHERE status IN ('assinada','aguardando_chefe')"),
+            pool.query("SELECT COUNT(*) as n FROM ordens WHERE status = 'concluida'"),
+            pool.query("SELECT COUNT(*) as n FROM ordens")
+        ]);
+
         const stats = {
-            abertas:    db.prepare("SELECT COUNT(*) as n FROM ordens WHERE status = 'aberta'").get().n,
-            andamento:  db.prepare("SELECT COUNT(*) as n FROM ordens WHERE status IN ('assinada','aguardando_chefe')").get().n,
-            concluidas: db.prepare("SELECT COUNT(*) as n FROM ordens WHERE status = 'concluida'").get().n,
-            total:      db.prepare("SELECT COUNT(*) as n FROM ordens").get().n
+            abertas:    r1.rows[0].n,
+            andamento:  r2.rows[0].n,
+            concluidas: r3.rows[0].n,
+            total:      r4.rows[0].n
         };
+
         const conteudo = `
             <div class="page-header">
                 <div>
@@ -565,7 +561,7 @@ app.get('/nova-os', verificarLogin, verificarTrocaSenha, (req, res) => {
     res.send(layout({ titulo: 'Nova OS', conteudo, usuario, paginaAtiva: 'nova-os' }));
 });
 
-app.post('/os', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.post('/os', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const {
             numero_chamado, nome, cartorio, equipamento,
@@ -573,40 +569,38 @@ app.post('/os', verificarLogin, verificarTrocaSenha, (req, res) => {
             paragrafo_reparo, paragrafo_substituicao, patrimonio_novo
         } = req.body;
 
-        const result = db.prepare(`
+        const result = await pool.query(`
             INSERT INTO ordens (
                 numero_chamado, nome, cartorio, equipamento,
                 patrimonio, descricao, data_retirada, tecnico,
                 paragrafo_reparo, paragrafo_substituicao, patrimonio_novo, status
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'aberta')
-        `).run(
-            numero_chamado || null, nome, cartorio, equipamento,
-            patrimonio, descricao, data_retirada, tecnico,
-            paragrafo_reparo ? 1 : 0,
-            paragrafo_substituicao ? 1 : 0,
-            patrimonio_novo || null
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'aberta') RETURNING id`,
+            [
+                numero_chamado || null, nome, cartorio, equipamento,
+                patrimonio, descricao, data_retirada, tecnico,
+                paragrafo_reparo ? 1 : 0,
+                paragrafo_substituicao ? 1 : 0,
+                patrimonio_novo || null
+            ]
         );
 
+        const novoId = result.rows[0].id;
         const data = new Date().toLocaleDateString('pt-BR');
-        const existente = db.prepare('SELECT * FROM inventario WHERE patrimonio = ?').get(patrimonio);
-        if (existente) {
-            db.prepare(`
-                UPDATE inventario SET
-                    status = 'em_manutencao',
-                    numero_chamado = ?,
-                    data_atualizacao = ?,
-                    modificado_por = ?
-                WHERE patrimonio = ?
-            `).run(numero_chamado || null, data, tecnico, patrimonio);
+
+        const existente = await pool.query('SELECT id FROM inventario WHERE patrimonio = $1', [patrimonio]);
+        if (existente.rows.length > 0) {
+            await pool.query(
+                `UPDATE inventario SET status='em_manutencao', numero_chamado=$1, data_atualizacao=$2, modificado_por=$3 WHERE patrimonio=$4`,
+                [numero_chamado || null, data, tecnico, patrimonio]
+            );
         } else {
-            db.prepare(`
-                INSERT INTO inventario (equipamento, patrimonio, cartorio, numero_chamado, status, data_atualizacao, modificado_por)
-                VALUES (?, ?, ?, ?, 'em_manutencao', ?, ?)
-            `).run(equipamento, patrimonio, cartorio, numero_chamado || null, data, tecnico);
+            await pool.query(
+                `INSERT INTO inventario (equipamento, patrimonio, cartorio, numero_chamado, status, data_atualizacao, modificado_por) VALUES ($1,$2,$3,$4,'em_manutencao',$5,$6)`,
+                [equipamento, patrimonio, cartorio, numero_chamado || null, data, tecnico]
+            );
         }
 
-        res.redirect(`/os/${result.lastInsertRowid}`);
+        res.redirect(`/os/${novoId}`);
     } catch (err) {
         console.error('[ERRO] Criar OS:', err);
         res.status(500).send('Erro interno ao criar OS.');
@@ -616,10 +610,12 @@ app.post('/os', verificarLogin, verificarTrocaSenha, (req, res) => {
 // =====================================================
 // ROTAS — LISTA DE OS
 // =====================================================
-app.get('/lista', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.get('/lista', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const usuario = req.session.usuario;
-        const ordens = db.prepare('SELECT * FROM ordens ORDER BY id DESC').all();
+        const result = await pool.query('SELECT * FROM ordens ORDER BY id DESC');
+        const ordens = result.rows;
+
         const cards = ordens.map(os => `
             <div class="os-card" data-status="${os.status}" data-texto="${escapeHtml(os.patrimonio + ' ' + os.equipamento + ' ' + os.cartorio).toLowerCase()}">
                 <div class="os-card-header">
@@ -637,6 +633,7 @@ app.get('/lista', verificarLogin, verificarTrocaSenha, (req, res) => {
                 </div>
             </div>
         `).join('');
+
         const conteudo = `
             <div class="page-header">
                 <div>
@@ -688,11 +685,13 @@ app.get('/lista', verificarLogin, verificarTrocaSenha, (req, res) => {
 // =====================================================
 // ROTAS — VISUALIZAR OS
 // =====================================================
-app.get('/os/:id', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.get('/os/:id', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const usuario = req.session.usuario;
-        const os = db.prepare('SELECT * FROM ordens WHERE id = ?').get(req.params.id);
+        const result = await pool.query('SELECT * FROM ordens WHERE id = $1', [req.params.id]);
+        const os = result.rows[0];
         if (!os) return res.status(404).send('OS não encontrada.');
+
         const fluxo = {
             'aberta':           { valor: 'assinada',         label: '🔵 Marcar como Assinada por mim' },
             'assinada':         { valor: 'aguardando_chefe', label: '🟠 Enviar para o Chefe' },
@@ -700,6 +699,7 @@ app.get('/os/:id', verificarLogin, verificarTrocaSenha, (req, res) => {
             'concluida':        null
         };
         const prox = fluxo[os.status];
+
         const conteudo = `
             <div class="page-header">
                 <div>
@@ -773,11 +773,13 @@ app.get('/os/:id', verificarLogin, verificarTrocaSenha, (req, res) => {
 // =====================================================
 // ROTAS — EDITAR OS
 // =====================================================
-app.get('/os/:id/editar', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.get('/os/:id/editar', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const usuario = req.session.usuario;
-        const os = db.prepare('SELECT * FROM ordens WHERE id = ?').get(req.params.id);
+        const result = await pool.query('SELECT * FROM ordens WHERE id = $1', [req.params.id]);
+        const os = result.rows[0];
         if (!os) return res.status(404).send('OS não encontrada.');
+
         const conteudo = `
             <div class="page-header">
                 <div>
@@ -810,7 +812,7 @@ app.get('/os/:id/editar', verificarLogin, verificarTrocaSenha, (req, res) => {
                     </div>
                     <div class="form-group">
                         <label>Data de Retirada <span class="required">*</span></label>
-                        <input type="date" name="data_retirada" value="${escapeHtml(os.data_retirada)}" required>
+                        <input type="date" name="data_retirada" value="${escapeHtml(String(os.data_retirada).substring(0,10))}" required>
                     </div>
                     <div class="form-group full-width">
                         <label>Descrição <span class="required">*</span></label>
@@ -856,26 +858,27 @@ app.get('/os/:id/editar', verificarLogin, verificarTrocaSenha, (req, res) => {
     }
 });
 
-app.post('/os/:id/editar', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.post('/os/:id/editar', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const {
             numero_chamado, nome, cartorio, equipamento,
             patrimonio, descricao, data_retirada, tecnico,
             paragrafo_reparo, paragrafo_substituicao, patrimonio_novo
         } = req.body;
-        db.prepare(`
+        await pool.query(`
             UPDATE ordens SET
-                numero_chamado = ?, nome = ?, cartorio = ?, equipamento = ?,
-                patrimonio = ?, descricao = ?, data_retirada = ?, tecnico = ?,
-                paragrafo_reparo = ?, paragrafo_substituicao = ?, patrimonio_novo = ?
-            WHERE id = ?
-        `).run(
-            numero_chamado || null, nome, cartorio, equipamento,
-            patrimonio, descricao, data_retirada, tecnico,
-            paragrafo_reparo ? 1 : 0,
-            paragrafo_substituicao ? 1 : 0,
-            patrimonio_novo || null,
-            req.params.id
+                numero_chamado=$1, nome=$2, cartorio=$3, equipamento=$4,
+                patrimonio=$5, descricao=$6, data_retirada=$7, tecnico=$8,
+                paragrafo_reparo=$9, paragrafo_substituicao=$10, patrimonio_novo=$11
+            WHERE id=$12`,
+            [
+                numero_chamado || null, nome, cartorio, equipamento,
+                patrimonio, descricao, data_retirada, tecnico,
+                paragrafo_reparo ? 1 : 0,
+                paragrafo_substituicao ? 1 : 0,
+                patrimonio_novo || null,
+                req.params.id
+            ]
         );
         res.redirect(`/os/${req.params.id}`);
     } catch (err) {
@@ -887,10 +890,10 @@ app.post('/os/:id/editar', verificarLogin, verificarTrocaSenha, (req, res) => {
 // =====================================================
 // ROTAS — ATUALIZAR STATUS
 // =====================================================
-app.post('/status/:id', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.post('/status/:id', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const { status } = req.body;
-        db.prepare('UPDATE ordens SET status = ? WHERE id = ?').run(status, req.params.id);
+        await pool.query('UPDATE ordens SET status = $1 WHERE id = $2', [status, req.params.id]);
         res.redirect(`/os/${req.params.id}`);
     } catch (err) {
         console.error('[ERRO] Status:', err);
@@ -901,16 +904,17 @@ app.post('/status/:id', verificarLogin, verificarTrocaSenha, (req, res) => {
 // =====================================================
 // ROTAS — UPLOAD PDF ASSINADO
 // =====================================================
-app.post('/upload/:id', verificarLogin, verificarTrocaSenha, upload.single('pdf'), (req, res) => {
+app.post('/upload/:id', verificarLogin, verificarTrocaSenha, upload.single('pdf'), async (req, res) => {
     try {
         if (!req.file) return res.redirect(`/os/${req.params.id}?erro=arquivo`);
         const filename = `os-${req.params.id}-assinada.pdf`;
         const finalPath = path.join(__dirname, 'uploads', filename);
         fs.renameSync(req.file.path, finalPath);
         const data_devolucao = req.body.data_devolucao || null;
-        db.prepare(`
-            UPDATE ordens SET pdf_assinado = ?, data_devolucao = ? WHERE id = ?
-        `).run(filename, data_devolucao, req.params.id);
+        await pool.query(
+            'UPDATE ordens SET pdf_assinado = $1, data_devolucao = $2 WHERE id = $3',
+            [filename, data_devolucao, req.params.id]
+        );
         res.redirect(`/os/${req.params.id}`);
     } catch (err) {
         console.error('[ERRO] Upload PDF:', err);
@@ -923,13 +927,13 @@ app.post('/upload/:id', verificarLogin, verificarTrocaSenha, upload.single('pdf'
 // =====================================================
 app.get('/gerar-pdf/:id', verificarLogin, async (req, res) => {
     try {
-        const os = db.prepare('SELECT * FROM ordens WHERE id = ?').get(req.params.id);
+        const result = await pool.query('SELECT * FROM ordens WHERE id = $1', [req.params.id]);
+        const os = result.rows[0];
         if (!os) return res.status(404).send('OS não encontrada.');
 
-        const formatarData = (data) => {
+        const formatarDataPdf = (data) => {
             if (!data) return '';
-            const [ano, mes, dia] = data.split('-');
-            return `${dia}/${mes}/${ano}`;
+            return String(data).substring(0, 10).split('-').reverse().join('/');
         };
 
         const pdfDoc = await PDFDocument.create();
@@ -937,13 +941,12 @@ app.get('/gerar-pdf/:id', verificarLogin, async (req, res) => {
         const { height } = page.getSize();
         const form = pdfDoc.getForm();
 
-        const fontBold     = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-        const fontNormal   = await pdfDoc.embedFont(StandardFonts.Helvetica);
-        const fontOblique  = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+        const fontBold      = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const fontNormal    = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const fontOblique   = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
         const fontTimesBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
-        const fontTimes    = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+        const fontTimes     = await pdfDoc.embedFont(StandardFonts.TimesRoman);
 
-        // LOGO
         const logoPath = path.join(__dirname, 'public', 'IT2B IMG.png');
         if (fs.existsSync(logoPath)) {
             const logoBytes = fs.readFileSync(logoPath);
@@ -951,28 +954,12 @@ app.get('/gerar-pdf/:id', verificarLogin, async (req, res) => {
             page.drawImage(logoImage, { x: 420, y: height - 90, width: 120, height: 65 });
         }
 
-        // TÍTULO
-        page.drawText('OS DE EQUIPAMENTOS', {
-            x: 130, y: height - 55, font: fontBold, size: 16, color: rgb(0, 0, 0)
-        });
+        page.drawText('OS DE EQUIPAMENTOS', { x: 130, y: height - 55, font: fontBold, size: 16, color: rgb(0,0,0) });
+        page.drawText('Tribunal de Justiça do Estado de São Paulo', { x: 110, y: height - 73, font: fontBold, size: 12, color: rgb(0,0,0) });
+        page.drawText('Comarca de Caraguatatuba', { x: 185, y: height - 89, font: fontOblique, size: 11, color: rgb(0,0,0) });
+        page.drawText(`OS Nº: ${os.id}${os.numero_chamado ? `          Chamado: ${os.numero_chamado}` : ''}`, { x: 50, y: height - 120, font: fontNormal, size: 10, color: rgb(0,0,0) });
 
-        // SUBTÍTULO
-        page.drawText('Tribunal de Justiça do Estado de São Paulo', {
-            x: 110, y: height - 73, font: fontBold, size: 12, color: rgb(0, 0, 0)
-        });
-
-        // COMARCA
-        page.drawText('Comarca de Caraguatatuba', {
-            x: 185, y: height - 89, font: fontOblique, size: 11, color: rgb(0, 0, 0)
-        });
-
-        // OS Nº e CHAMADO
-        page.drawText(`OS Nº: ${os.id}${os.numero_chamado ? `          Chamado: ${os.numero_chamado}` : ''}`, {
-            x: 50, y: height - 120, font: fontNormal, size: 10, color: rgb(0, 0, 0)
-        });
-
-        // 1º PARÁGRAFO
-        const paragrafo1 = `Declaro estar ciente de que o equipamento ${os.equipamento.toUpperCase()}, de patrimônio nº ${os.patrimonio}, pertence a ${os.cartorio.toUpperCase()}, na data ${formatarData(os.data_retirada)} para fins de manutenção.`;
+        const paragrafo1 = `Declaro estar ciente de que o equipamento ${os.equipamento.toUpperCase()}, de patrimônio nº ${os.patrimonio}, pertence a ${os.cartorio.toUpperCase()}, na data ${formatarDataPdf(os.data_retirada)} para fins de manutenção.`;
 
         const words = paragrafo1.split(' ');
         let line = '';
@@ -983,47 +970,37 @@ app.get('/gerar-pdf/:id', verificarLogin, async (req, res) => {
             const testLine = line + word + ' ';
             const testWidth = fontTimes.widthOfTextAtSize(testLine, 11);
             if (testWidth > maxWidth && line !== '') {
-                page.drawText(line.trim(), { x: 50, y, font: fontTimes, size: 11, color: rgb(0, 0, 0) });
+                page.drawText(line.trim(), { x: 50, y, font: fontTimes, size: 11, color: rgb(0,0,0) });
                 y -= 16;
                 line = word + ' ';
             } else {
                 line = testLine;
             }
         }
-        page.drawText(line.trim(), { x: 50, y, font: fontTimes, size: 11, color: rgb(0, 0, 0) });
+        page.drawText(line.trim(), { x: 50, y, font: fontTimes, size: 11, color: rgb(0,0,0) });
 
-        // ASSINATURA TÉCNICO
         page.drawLine({ start: { x: 310, y: height - 250 }, end: { x: 545, y: height - 250 }, thickness: 0.5, color: rgb(0,0,0) });
         page.drawText(`Técnico: ${os.tecnico}`, { x: 310, y: height - 263, font: fontTimesBold, size: 9, color: rgb(0,0,0) });
         page.drawText('Assinatura do Técnico Responsável - IT2B', { x: 310, y: height - 275, font: fontTimes, size: 8, color: rgb(0,0,0) });
 
         let currentY = height - 380;
 
-        // 2º PARÁGRAFO — Reparo (sempre visível, checkbox marca qual se aplica)
         const checkbox1 = form.createCheckBox('reparo');
         checkbox1.addToPage(page, { x: 50, y: currentY - 4, width: 12, height: 12 });
         if (os.paragrafo_reparo) checkbox1.check();
-        page.drawText('Declaro que recebi o equipamento acima identificado devidamente funcionando.', {
-            x: 70, y: currentY, font: fontNormal, size: 11, color: rgb(0,0,0)
-        });
+        page.drawText('Declaro que recebi o equipamento acima identificado devidamente funcionando.', { x: 70, y: currentY, font: fontNormal, size: 11, color: rgb(0,0,0) });
         currentY -= 35;
 
-        // 3º PARÁGRAFO — Substituição (sempre visível, checkbox marca qual se aplica)
         const checkbox2 = form.createCheckBox('substituicao');
         checkbox2.addToPage(page, { x: 50, y: currentY - 4, width: 12, height: 12 });
         if (os.paragrafo_substituicao) checkbox2.check();
-        page.drawText('Declaro que recebi equipamento novo com patrimônio nº', {
-            x: 70, y: currentY, font: fontNormal, size: 11, color: rgb(0,0,0)
-        });
+        page.drawText('Declaro que recebi equipamento novo com patrimônio nº', { x: 70, y: currentY, font: fontNormal, size: 11, color: rgb(0,0,0) });
         const campoPat = form.createTextField('patrimonio_novo');
         campoPat.setText(os.patrimonio_novo || '');
         campoPat.addToPage(page, { x: 70, y: currentY - 20, width: 150, height: 16, borderWidth: 0.5 });
-        page.drawText('em substituição ao equipamento acima identificado.', {
-            x: 70, y: currentY - 38, font: fontNormal, size: 11, color: rgb(0,0,0)
-        });
+        page.drawText('em substituição ao equipamento acima identificado.', { x: 70, y: currentY - 38, font: fontNormal, size: 11, color: rgb(0,0,0) });
         currentY -= 90;
 
-        // DATA
         page.drawText('Caraguatatuba,', { x: 280, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
         const campoDia = form.createTextField('dia');
         campoDia.addToPage(page, { x: 358, y: currentY - 24, width: 25, height: 14, borderWidth: 0.5 });
@@ -1032,12 +1009,10 @@ app.get('/gerar-pdf/:id', verificarLogin, async (req, res) => {
         campoMes.addToPage(page, { x: 420, y: currentY - 24, width: 60, height: 14, borderWidth: 0.5 });
         page.drawText('de 2026.', { x: 490, y: currentY - 20, font: fontOblique, size: 10, color: rgb(0,0,0) });
 
-        // ASSINATURA COORDENADOR
         page.drawLine({ start: { x: 50, y: currentY - 70 }, end: { x: 250, y: currentY - 70 }, thickness: 0.5, color: rgb(0,0,0) });
         page.drawText(os.nome.toUpperCase(), { x: 50, y: currentY - 83, font: fontTimesBold, size: 9, color: rgb(0,0,0) });
         page.drawText('Assinatura do Coordenador do Cartório', { x: 50, y: currentY - 95, font: fontTimes, size: 8, color: rgb(0,0,0) });
 
-        // RODAPÉ
         const rodapePath = path.join(__dirname, 'public', 'it2b rodapé img.jpg');
         if (fs.existsSync(rodapePath)) {
             const rodapeBytes = fs.readFileSync(rodapePath);
@@ -1058,11 +1033,13 @@ app.get('/gerar-pdf/:id', verificarLogin, async (req, res) => {
 // =====================================================
 // ROTAS — INVENTÁRIO
 // =====================================================
-app.get('/inventario', (req, res) => {
+app.get('/inventario', async (req, res) => {
     try {
-        const itens = db.prepare('SELECT * FROM inventario ORDER BY id DESC').all();
+        const result = await pool.query('SELECT * FROM inventario ORDER BY id DESC');
+        const itens = result.rows;
         const usuario = req.session.usuario || null;
         const isLoggedIn = !!usuario;
+
         const rows = itens.map(item => `
             <tr>
                 <td>${escapeHtml(String(item.id))}</td>
@@ -1076,6 +1053,7 @@ app.get('/inventario', (req, res) => {
                 <td>${isLoggedIn ? `<a href="/inventario/editar/${item.id}" class="btn-action btn-editar">✏</a>` : '—'}</td>
             </tr>
         `).join('');
+
         const tableContent = `
             <div class="page-header">
                 <div>
@@ -1116,6 +1094,7 @@ app.get('/inventario', (req, res) => {
                 }
             </script>
         `;
+
         if (isLoggedIn) {
             res.send(layout({ titulo: 'Inventário', conteudo: tableContent, usuario, paginaAtiva: 'inventario' }));
         } else {
@@ -1202,14 +1181,14 @@ app.get('/inventario/novo', verificarLogin, verificarTrocaSenha, (req, res) => {
     res.send(layout({ titulo: 'Novo Equipamento', conteudo, usuario, paginaAtiva: 'inventario' }));
 });
 
-app.post('/inventario/novo', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.post('/inventario/novo', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const { equipamento, patrimonio, cartorio, numero_chamado, status, modificado_por } = req.body;
         const data = new Date().toLocaleDateString('pt-BR');
-        db.prepare(`
-            INSERT INTO inventario (equipamento, patrimonio, cartorio, numero_chamado, status, data_atualizacao, modificado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(equipamento, patrimonio, cartorio, numero_chamado || null, status, data, modificado_por);
+        await pool.query(
+            `INSERT INTO inventario (equipamento, patrimonio, cartorio, numero_chamado, status, data_atualizacao, modificado_por) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [equipamento, patrimonio, cartorio, numero_chamado || null, status, data, modificado_por]
+        );
         res.redirect('/inventario');
     } catch (err) {
         console.error('[ERRO] Novo equipamento:', err);
@@ -1217,11 +1196,13 @@ app.post('/inventario/novo', verificarLogin, verificarTrocaSenha, (req, res) => 
     }
 });
 
-app.get('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.get('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const usuario = req.session.usuario;
-        const item = db.prepare('SELECT * FROM inventario WHERE id = ?').get(req.params.id);
+        const result = await pool.query('SELECT * FROM inventario WHERE id = $1', [req.params.id]);
+        const item = result.rows[0];
         if (!item) return res.status(404).send('Equipamento não encontrado.');
+
         const statusOpts = [
             { v: 'funcionando',        l: '🟢 Funcionando' },
             { v: 'aguardando_chamado', l: '🟡 Aguardando Chamado' },
@@ -1230,8 +1211,10 @@ app.get('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, (req, res
             { v: 'enviado_conserto',   l: '🟠 Enviado p/ Conserto' },
             { v: 'descartado',         l: '⚫ Descartado' }
         ].map(o => `<option value="${o.v}" ${o.v === item.status ? 'selected' : ''}>${o.l}</option>`).join('');
+
         const tecnicoOpts = ['Saulo Levy Lima Martins', 'Anderson Marques Farias']
             .map(t => `<option value="${t}" ${t === item.modificado_por ? 'selected' : ''}>${t}</option>`).join('');
+
         const conteudo = `
             <div class="page-header">
                 <div>
@@ -1280,16 +1263,14 @@ app.get('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, (req, res
     }
 });
 
-app.post('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, (req, res) => {
+app.post('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, async (req, res) => {
     try {
         const { equipamento, patrimonio, cartorio, numero_chamado, status, modificado_por } = req.body;
         const data = new Date().toLocaleDateString('pt-BR');
-        db.prepare(`
-            UPDATE inventario SET
-                equipamento = ?, patrimonio = ?, cartorio = ?,
-                numero_chamado = ?, status = ?, data_atualizacao = ?, modificado_por = ?
-            WHERE id = ?
-        `).run(equipamento, patrimonio, cartorio, numero_chamado || null, status, data, modificado_por, req.params.id);
+        await pool.query(
+            `UPDATE inventario SET equipamento=$1, patrimonio=$2, cartorio=$3, numero_chamado=$4, status=$5, data_atualizacao=$6, modificado_por=$7 WHERE id=$8`,
+            [equipamento, patrimonio, cartorio, numero_chamado || null, status, data, modificado_por, req.params.id]
+        );
         res.redirect('/inventario');
     } catch (err) {
         console.error('[ERRO] Salvar inventário:', err);
@@ -1298,10 +1279,18 @@ app.post('/inventario/editar/:id', verificarLogin, verificarTrocaSenha, (req, re
 });
 
 // =====================================================
-// SERVIDOR
+// INICIALIZAÇÃO
 // =====================================================
-// Coloca isso:
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`🚀 IT2B rodando na porta ${PORT}`);
-});
+
+criarTabelas()
+    .then(() => criarUsuariosPadrao())
+    .then(() => {
+        app.listen(PORT, () => {
+            console.log(`🚀 IT2B rodando na porta ${PORT}`);
+        });
+    })
+    .catch(err => {
+        console.error('Erro ao inicializar:', err);
+        process.exit(1);
+    });
