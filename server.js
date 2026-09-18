@@ -37,6 +37,16 @@ const upload = multer({
     }
 });
 
+app.post('/os/:id/excluir', verificarLogin, async (req, res) => {
+    try {
+        await pool.query('DELETE FROM ordens WHERE id = $1', [req.params.id]);
+        res.redirect('/lista');
+    } catch (err) {
+        console.error('[ERRO] Excluir OS:', err);
+        res.status(500).send('Erro ao excluir OS.');
+    }
+});
+
 // =====================================================
 // TABELAS
 // =====================================================
@@ -708,8 +718,11 @@ app.get('/os/:id', verificarLogin, verificarTrocaSenha, async (req, res) => {
                 </div>
                 <div class="page-header-actions">
                     <a href="/gerar-pdf/${os.id}" class="btn-primary" target="_blank">📄 Gerar PDF</a>
-                    <a href="/os/${os.id}/editar" class="btn-secondary">✏ Editar</a>
-                    <a href="/lista" class="btn-secondary">← Lista</a>
+<a href="/os/${os.id}/editar" class="btn-secondary">✏ Editar</a>
+<a href="/lista" class="btn-secondary">← Lista</a>
+<form action="/os/${os.id}/excluir" method="POST" style="display:inline" onsubmit="return confirm('Tem certeza que deseja excluir esta OS?')">
+    <button type="submit" class="btn-danger">🗑 Excluir</button>
+</form>
                 </div>
             </div>
             <div class="card">
