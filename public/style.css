@@ -1173,6 +1173,7 @@ button, input, select, textarea { font-family: inherit; }
 .regra.ok   { color: #166534; font-weight: 600; }
 .regra.fail { color: #991b1b; }
 .trocar-footer {
+    color: white;
     text-align: center;
     margin-top: 1.5rem;
     padding-top: 1.25rem;
