@@ -1086,7 +1086,7 @@ button, input, select, textarea { font-family: inherit; }
     text-align: center;
     margin-top: 2rem;
     font-size: 0.72rem;
-    color: var(--white);
+    color: white;
     padding-top: 1.25rem;
     border-top: 1px solid var(--border);
     display: flex;
