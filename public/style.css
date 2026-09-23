@@ -1083,10 +1083,10 @@ button, input, select, textarea { font-family: inherit; }
 }
 .login-forgot a:hover { color: var(--red); }
 .login-footer-text {
-    text-align: center;
+     color: white;
+     text-align: center;
     margin-top: 2rem;
     font-size: 0.72rem;
-    color: white;
     padding-top: 1.25rem;
     border-top: 1px solid var(--border);
     display: flex;
